@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { getMeals, getWeekPlans, createWeekPlan, deleteWeekPlan, getShoppingItems, createShoppingItem, updateShoppingItem } from '@/lib/db'
-import type { Meal, WeekPlan, ShoppingItem } from '@/types/database'
+import { getMeals, getWeekPlans, createWeekPlan, deleteWeekPlan, getShoppingItems, createShoppingItem, updateShoppingItem, getIngredientsByMealIds } from '@/lib/db'
+import type { Meal, WeekPlan, ShoppingItem, Ingredient } from '@/types/database'
 
 function getWeekDates(date: Date): Date[] {
   const d = new Date(date)
@@ -31,6 +31,8 @@ export default function PlannerPage() {
   const [meals, setMeals] = useState<Meal[]>([])
   const [weekPlans, setWeekPlans] = useState<WeekPlan[]>([])
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([])
+  const [mealIngredients, setMealIngredients] = useState<Ingredient[]>([])
+  const [checkedMealIngredients, setCheckedMealIngredients] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [showMealSelector, setShowMealSelector] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -63,6 +65,12 @@ export default function PlannerPage() {
       setMeals(mealsData)
       setWeekPlans(plansData)
       setShoppingItems(itemsData)
+
+      // Fetch ingredients for all planned meals
+      const mealIds = plansData.map(p => p.meal_id)
+      const ingredients = await getIngredientsByMealIds(mealIds)
+      setMealIngredients(ingredients)
+      setCheckedMealIngredients(new Set())
     } catch (err) {
       console.error('Failed to load data:', err)
     } finally {
@@ -127,6 +135,34 @@ export default function PlannerPage() {
       console.error('Failed to add item:', err)
     }
   }
+
+  const toggleMealIngredient = (ingredientName: string) => {
+    setCheckedMealIngredients(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(ingredientName)) {
+        newSet.delete(ingredientName)
+      } else {
+        newSet.add(ingredientName)
+      }
+      return newSet
+    })
+  }
+
+  const aggregatedIngredients = useMemo(() => {
+    const map: Record<string, { quantity: string }> = {}
+    mealIngredients.forEach(ing => {
+      const name = ing.name.toLowerCase().trim()
+      if (map[name]) {
+        // Combine quantities (simple concatenation)
+        if (ing.quantity && !map[name].quantity.includes(ing.quantity)) {
+          map[name].quantity += `, ${ing.quantity}`
+        }
+      } else {
+        map[name] = { quantity: ing.quantity || '' }
+      }
+    })
+    return Object.entries(map).map(([name, data]) => ({ name, quantity: data.quantity }))
+  }, [mealIngredients])
 
   const filteredMeals = useMemo(() => {
     if (!searchQuery.trim()) return meals
@@ -298,7 +334,8 @@ export default function PlannerPage() {
             Add
           </button>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="space-y-1">
+          {/* Custom shopping items */}
           {shoppingItems
             .sort((a, b) => {
               if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1
@@ -307,29 +344,58 @@ export default function PlannerPage() {
             .map(item => (
               <div
                 key={item.id}
-                className={`flex flex-col items-center p-3 rounded border ${
-                  item.is_checked ? 'bg-gray-50 text-gray-400' : 'bg-white'
+                className={`flex items-center gap-3 p-2 rounded ${
+                  item.is_checked ? 'bg-gray-50 text-gray-400' : ''
                 }`}
               >
                 <input
                   type="checkbox"
                   checked={item.is_checked}
                   onChange={() => toggleShoppingItem(item)}
-                  className="mb-2 rounded"
+                  className="rounded"
                 />
-                <div className="w-16 h-16 bg-gray-100 rounded-lg mb-2 flex items-center justify-center text-2xl">
-                  🛒
-                </div>
-                <span className={`text-sm text-center ${item.is_checked ? 'line-through' : ''}`}>
+                <span className={`flex-1 ${item.is_checked ? 'line-through' : ''}`}>
                   {item.name}
                 </span>
                 {item.quantity && (
-                  <span className="text-xs text-gray-400">{item.quantity}</span>
+                  <span className="text-sm text-gray-400">{item.quantity}</span>
                 )}
               </div>
             ))}
+          {/* Aggregated meal ingredients */}
+          {aggregatedIngredients
+            .sort((a, b) => {
+              const aChecked = checkedMealIngredients.has(a.name.toLowerCase())
+              const bChecked = checkedMealIngredients.has(b.name.toLowerCase())
+              if (aChecked !== bChecked) return aChecked ? 1 : -1
+              return a.name.localeCompare(b.name)
+            })
+            .map((ing, idx) => {
+              const isChecked = checkedMealIngredients.has(ing.name.toLowerCase())
+              return (
+                <div
+                  key={`${ing.name}-${idx}`}
+                  className={`flex items-center gap-3 p-2 rounded ${
+                    isChecked ? 'bg-gray-50 text-gray-400' : ''
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleMealIngredient(ing.name.toLowerCase())}
+                    className="rounded"
+                  />
+                  <span className={`flex-1 capitalize ${isChecked ? 'line-through' : ''}`}>
+                    {ing.name}
+                  </span>
+                  {ing.quantity && (
+                    <span className="text-sm text-gray-400">{ing.quantity}</span>
+                  )}
+                </div>
+              )
+            })}
         </div>
-        {shoppingItems.length === 0 && (
+        {shoppingItems.length === 0 && aggregatedIngredients.length === 0 && (
           <p className="text-sm text-gray-500 text-center py-4">
             Plan meals to see ingredients
           </p>

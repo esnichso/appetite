@@ -61,6 +61,16 @@ export async function getIngredients(mealId: string): Promise<Ingredient[]> {
   return data || []
 }
 
+export async function getIngredientsByMealIds(mealIds: string[]): Promise<Ingredient[]> {
+  if (mealIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('ingredients')
+    .select('*')
+    .in('meal_id', mealIds)
+  if (error) throw error
+  return data || []
+}
+
 export async function createIngredient(ingredient: Omit<Ingredient, 'id'>): Promise<Ingredient> {
   const { data, error } = await supabase
     .from('ingredients')
