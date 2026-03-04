@@ -68,7 +68,7 @@ export default function MealsPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-bold">Meals</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Meals</h1>
         <Link
           href="/meals/new"
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -113,7 +113,7 @@ export default function MealsPage() {
                 </div>
               )}
               <div className="p-4">
-                <h2 className="font-semibold text-lg">{meal.name}</h2>
+                <h2 className="font-semibold text-lg text-slate-800">{meal.name}</h2>
               </div>
             </Link>
           ))}

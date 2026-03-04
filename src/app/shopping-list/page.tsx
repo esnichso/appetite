@@ -121,7 +121,7 @@ export default function ShoppingListPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-bold">Shopping List</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Shopping List</h1>
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigateWeek(-1)}

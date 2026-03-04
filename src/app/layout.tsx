@@ -24,7 +24,7 @@ export default function RootLayout({
       <body className={`${geistSans.variable} antialiased`}>
         <AuthProvider>
           <Header />
-          <main className="min-h-screen bg-gray-50">
+          <main className="min-h-screen bg-slate-100">
             {children}
           </main>
         </AuthProvider>
