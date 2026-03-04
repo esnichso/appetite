@@ -183,16 +183,14 @@ export default function PlannerPage() {
         </div>
       </div>
 
-      <div className="flex gap-8">
-        <div className="flex-1">
-          <div className="grid grid-cols-7 gap-4">
+      <div className="grid grid-cols-7 gap-4 mb-8">
             {weekDates.map(date => {
               const dateStr = formatDate(date)
               const plans = plansByDate[dateStr] || []
               return (
                 <div
                   key={dateStr}
-                  className="min-h-[200px] border rounded-lg p-3 bg-white"
+                  className="min-h-[280px] border rounded-lg p-3 bg-white"
                   onDragOver={handleDragOver}
                   onDrop={() => handleDrop(dateStr)}
                 >
@@ -204,15 +202,30 @@ export default function PlannerPage() {
                     {plans.map(plan => (
                       <div
                         key={plan.id}
-                        className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm"
+                        className="relative group rounded-lg overflow-hidden bg-gray-100"
                       >
-                        <span className="truncate">{plan.meal?.name}</span>
+                        <a href={`/meals/${plan.meal?.id}`} className="block">
+                          {plan.meal?.image_url ? (
+                            <img
+                              src={plan.meal.image_url}
+                              alt={plan.meal.name}
+                              className="w-full h-24 object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-24 bg-gray-200 flex items-center justify-center text-3xl">
+                              🍽️
+                            </div>
+                          )}
+                        </a>
                         <button
                           onClick={() => removeMealFromDay(plan.id)}
-                          className="text-gray-400 hover:text-red-500 ml-1"
+                          className="absolute top-1 right-1 w-6 h-6 bg-black/50 hover:bg-red-500 text-white rounded-full text-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           ×
                         </button>
+                        <div className="p-2 bg-white">
+                          <span className="text-xs font-medium truncate block">{plan.meal?.name}</span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -238,9 +251,20 @@ export default function PlannerPage() {
                           <button
                             key={meal.id}
                             onClick={() => addMealToDay(meal, dateStr)}
-                            className="w-full text-left px-2 py-1 hover:bg-gray-50 rounded"
+                            className="w-full text-left px-2 py-1 hover:bg-gray-50 rounded flex items-center gap-2"
                           >
-                            {meal.name}
+                            {meal.image_url ? (
+                              <img
+                                src={meal.image_url}
+                                alt={meal.name}
+                                className="w-6 h-6 rounded object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-6 h-6 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 text-xs">
+                                🍽️
+                              </div>
+                            )}
+                            <span className="truncate">{meal.name}</span>
                           </button>
                         ))}
                       </div>
@@ -255,60 +279,61 @@ export default function PlannerPage() {
                 </div>
               )
             })}
-          </div>
-        </div>
+      </div>
 
-        <div className="w-80">
-          <div className="bg-white border rounded-lg p-4">
-            <h2 className="font-semibold mb-4">Shopping List</h2>
-            <div className="flex gap-2 mb-4">
-              <input
-                type="text"
-                placeholder="Add item..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1 px-3 py-2 border rounded-md text-sm"
-              />
-              <button
-                onClick={addCustomItem}
-                className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm"
-              >
-                Add
-              </button>
-            </div>
-            <div className="space-y-2">
-              {shoppingItems
-                .sort((a, b) => {
-                  if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1
-                  return a.name.localeCompare(b.name)
-                })
-                .map(item => (
-                  <div
-                    key={item.id}
-                    className={`flex items-center gap-2 p-2 rounded ${
-                      item.is_checked ? 'bg-gray-50 text-gray-400' : ''
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={item.is_checked}
-                      onChange={() => toggleShoppingItem(item)}
-                      className="rounded"
-                    />
-                    <span className={item.is_checked ? 'line-through' : ''}>
-                      {item.name}
-                      {item.quantity && <span className="text-gray-400 ml-1">({item.quantity})</span>}
-                    </span>
-                  </div>
-                ))}
-              {shoppingItems.length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-4">
-                  Plan meals to see ingredients
-                </p>
-              )}
-            </div>
-          </div>
+      <div className="bg-white border rounded-lg p-4">
+        <h2 className="font-semibold mb-4 text-lg">Shopping List</h2>
+        <div className="flex gap-2 mb-4">
+          <input
+            type="text"
+            placeholder="Add item..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="flex-1 px-3 py-2 border rounded-md text-sm"
+          />
+          <button
+            onClick={addCustomItem}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm"
+          >
+            Add
+          </button>
         </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          {shoppingItems
+            .sort((a, b) => {
+              if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1
+              return a.name.localeCompare(b.name)
+            })
+            .map(item => (
+              <div
+                key={item.id}
+                className={`flex flex-col items-center p-3 rounded border ${
+                  item.is_checked ? 'bg-gray-50 text-gray-400' : 'bg-white'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={item.is_checked}
+                  onChange={() => toggleShoppingItem(item)}
+                  className="mb-2 rounded"
+                />
+                <div className="w-16 h-16 bg-gray-100 rounded-lg mb-2 flex items-center justify-center text-2xl">
+                  🛒
+                </div>
+                <span className={`text-sm text-center ${item.is_checked ? 'line-through' : ''}`}>
+                  {item.name}
+                </span>
+                {item.quantity && (
+                  <span className="text-xs text-gray-400">{item.quantity}</span>
+                )}
+              </div>
+            ))}
+        </div>
+        {shoppingItems.length === 0 && (
+          <p className="text-sm text-gray-500 text-center py-4">
+            Plan meals to see ingredients
+          </p>
+        )}
       </div>
     </div>
   )
