@@ -66,11 +66,12 @@ export default function PlannerPage() {
       setWeekPlans(plansData)
       setShoppingItems(itemsData)
 
-      // Fetch ingredients for all planned meals
       const mealIds = plansData.map(p => p.meal_id)
       const ingredients = await getIngredientsByMealIds(mealIds)
       setMealIngredients(ingredients)
-      setCheckedMealIngredients(new Set())
+
+      const checked = itemsData.filter(i => i.is_checked && !i.is_custom).map(i => i.name.toLowerCase())
+      setCheckedMealIngredients(new Set(checked))
     } catch (err) {
       console.error('Failed to load data:', err)
     } finally {
@@ -136,16 +137,46 @@ export default function PlannerPage() {
     }
   }
 
-  const toggleMealIngredient = (ingredientName: string) => {
-    setCheckedMealIngredients(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(ingredientName)) {
-        newSet.delete(ingredientName)
+  const toggleMealIngredient = async (ingredientName: string) => {
+    if (!user) return
+    const lowerName = ingredientName.toLowerCase()
+    const isChecked = checkedMealIngredients.has(lowerName)
+
+    try {
+      if (isChecked) {
+        const existing = shoppingItems.find(
+          i => i.name.toLowerCase() === lowerName && !i.is_custom
+        )
+        if (existing) {
+          const { deleteShoppingItem } = await import('@/lib/db')
+          await deleteShoppingItem(existing.id)
+          setShoppingItems(shoppingItems.filter(i => i.id !== existing.id))
+        }
       } else {
-        newSet.add(ingredientName)
+        const { createShoppingItem } = await import('@/lib/db')
+        const item = await createShoppingItem({
+          user_id: user.id,
+          name: ingredientName,
+          quantity: '',
+          is_custom: false,
+          is_checked: true,
+          week_start: weekStart
+        })
+        setShoppingItems([...shoppingItems, item])
       }
-      return newSet
-    })
+
+      setCheckedMealIngredients(prev => {
+        const newSet = new Set(prev)
+        if (isChecked) {
+          newSet.delete(lowerName)
+        } else {
+          newSet.add(lowerName)
+        }
+        return newSet
+      })
+    } catch (err) {
+      console.error('Failed to toggle meal ingredient:', err)
+    }
   }
 
   const aggregatedIngredients = useMemo(() => {
@@ -153,7 +184,6 @@ export default function PlannerPage() {
     mealIngredients.forEach(ing => {
       const name = ing.name.toLowerCase().trim()
       if (map[name]) {
-        // Combine quantities (simple concatenation)
         if (ing.quantity && !map[name].quantity.includes(ing.quantity)) {
           map[name].quantity += `, ${ing.quantity}`
         }
@@ -163,6 +193,42 @@ export default function PlannerPage() {
     })
     return Object.entries(map).map(([name, data]) => ({ name, quantity: data.quantity }))
   }, [mealIngredients])
+
+  const allShoppingItems = useMemo(() => {
+    const items: { id: string; name: string; quantity: string; isCustom: boolean; isChecked: boolean; dbItem?: ShoppingItem }[] = []
+
+    shoppingItems.forEach(item => {
+      items.push({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        isCustom: item.is_custom,
+        isChecked: item.is_checked,
+        dbItem: item
+      })
+    })
+
+    aggregatedIngredients.forEach(ing => {
+      const isChecked = checkedMealIngredients.has(ing.name.toLowerCase())
+      const existingCustom = shoppingItems.find(
+        i => i.name.toLowerCase() === ing.name.toLowerCase()
+      )
+      if (!existingCustom) {
+        items.push({
+          id: `meal-${ing.name}`,
+          name: ing.name,
+          quantity: ing.quantity,
+          isCustom: false,
+          isChecked
+        })
+      }
+    })
+
+    return items.sort((a, b) => {
+      if (a.isChecked !== b.isChecked) return a.isChecked ? 1 : -1
+      return a.name.localeCompare(b.name)
+    })
+  }, [shoppingItems, aggregatedIngredients, checkedMealIngredients])
 
   const filteredMeals = useMemo(() => {
     if (!searchQuery.trim()) return meals
@@ -335,67 +401,35 @@ export default function PlannerPage() {
           </button>
         </div>
         <div className="space-y-1">
-          {/* Custom shopping items */}
-          {shoppingItems
-            .sort((a, b) => {
-              if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1
-              return a.name.localeCompare(b.name)
-            })
-            .map(item => (
-              <div
-                key={item.id}
-                className={`flex items-center gap-3 p-2 rounded ${
-                  item.is_checked ? 'bg-gray-50 text-gray-400' : ''
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={item.is_checked}
-                  onChange={() => toggleShoppingItem(item)}
-                  className="rounded"
-                />
-                <span className={`flex-1 ${item.is_checked ? 'line-through' : ''}`}>
-                  {item.name}
-                </span>
-                {item.quantity && (
-                  <span className="text-sm text-gray-400">{item.quantity}</span>
-                )}
-              </div>
-            ))}
-          {/* Aggregated meal ingredients */}
-          {aggregatedIngredients
-            .sort((a, b) => {
-              const aChecked = checkedMealIngredients.has(a.name.toLowerCase())
-              const bChecked = checkedMealIngredients.has(b.name.toLowerCase())
-              if (aChecked !== bChecked) return aChecked ? 1 : -1
-              return a.name.localeCompare(b.name)
-            })
-            .map((ing, idx) => {
-              const isChecked = checkedMealIngredients.has(ing.name.toLowerCase())
-              return (
-                <div
-                  key={`${ing.name}-${idx}`}
-                  className={`flex items-center gap-3 p-2 rounded ${
-                    isChecked ? 'bg-gray-50 text-gray-400' : ''
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => toggleMealIngredient(ing.name.toLowerCase())}
-                    className="rounded"
-                  />
-                  <span className={`flex-1 capitalize ${isChecked ? 'line-through' : ''}`}>
-                    {ing.name}
-                  </span>
-                  {ing.quantity && (
-                    <span className="text-sm text-gray-400">{ing.quantity}</span>
-                  )}
-                </div>
-              )
-            })}
+          {allShoppingItems.map(item => (
+            <div
+              key={item.id}
+              className={`flex items-center gap-3 p-2 rounded ${
+                item.isChecked ? 'bg-gray-50 text-gray-400' : ''
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={item.isChecked}
+                onChange={() => {
+                  if (item.dbItem) {
+                    toggleShoppingItem(item.dbItem)
+                  } else {
+                    toggleMealIngredient(item.name)
+                  }
+                }}
+                className="rounded"
+              />
+              <span className={`flex-1 capitalize ${item.isChecked ? 'line-through' : ''}`}>
+                {item.name}
+              </span>
+              {item.quantity && (
+                <span className="text-sm text-gray-400">{item.quantity}</span>
+              )}
+            </div>
+          ))}
         </div>
-        {shoppingItems.length === 0 && aggregatedIngredients.length === 0 && (
+        {allShoppingItems.length === 0 && (
           <p className="text-sm text-gray-500 text-center py-4">
             Plan meals to see ingredients
           </p>

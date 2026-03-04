@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { getShoppingItems, createShoppingItem, updateShoppingItem, deleteShoppingItem } from '@/lib/db'
-import type { ShoppingItem } from '@/types/database'
+import { getShoppingItems, createShoppingItem, updateShoppingItem, deleteShoppingItem, getWeekPlans, getIngredientsByMealIds } from '@/lib/db'
+import type { ShoppingItem, WeekPlan, Ingredient } from '@/types/database'
 
 function getWeekDates(date: Date): Date[] {
   const d = new Date(date)
@@ -21,16 +21,28 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0]
 }
 
+type DisplayItem = {
+  id: string
+  name: string
+  quantity: string
+  isCustom: boolean
+  isChecked: boolean
+  dbItem?: ShoppingItem
+}
+
 export default function ShoppingListPage() {
   const { user, loading: authLoading } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([])
+  const [customItems, setCustomItems] = useState<ShoppingItem[]>([])
+  const [mealIngredients, setMealIngredients] = useState<Ingredient[]>([])
+  const [checkedMealIngredients, setCheckedMealIngredients] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [newItemName, setNewItemName] = useState('')
   const [newItemQuantity, setNewItemQuantity] = useState('')
 
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate])
   const weekStart = formatDate(weekDates[0])
+  const weekEnd = formatDate(weekDates[6])
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -47,8 +59,18 @@ export default function ShoppingListPage() {
     if (!user) return
     try {
       setLoading(true)
-      const items = await getShoppingItems(user.id, weekStart)
-      setShoppingItems(items)
+      const [custom, plans] = await Promise.all([
+        getShoppingItems(user.id, weekStart),
+        getWeekPlans(user.id, weekStart, weekEnd)
+      ])
+      setCustomItems(custom)
+
+      const mealIds = plans.map(p => p.meal_id)
+      const ingredients = await getIngredientsByMealIds(mealIds)
+      setMealIngredients(ingredients)
+
+      const checked = custom.filter(i => i.is_checked && !i.is_custom).map(i => i.name.toLowerCase())
+      setCheckedMealIngredients(new Set(checked))
     } catch (err) {
       console.error('Failed to load shopping items:', err)
     } finally {
@@ -62,12 +84,52 @@ export default function ShoppingListPage() {
     setCurrentDate(newDate)
   }
 
-  const toggleItem = async (item: ShoppingItem) => {
+  const toggleCustomItem = async (item: ShoppingItem) => {
     try {
       const updated = await updateShoppingItem(item.id, { is_checked: !item.is_checked })
-      setShoppingItems(shoppingItems.map(i => i.id === item.id ? updated : i))
+      setCustomItems(customItems.map(i => i.id === item.id ? updated : i))
     } catch (err) {
       console.error('Failed to toggle item:', err)
+    }
+  }
+
+  const toggleMealIngredient = async (name: string) => {
+    if (!user) return
+    const lowerName = name.toLowerCase()
+    const isChecked = checkedMealIngredients.has(lowerName)
+
+    try {
+      if (isChecked) {
+        const existing = customItems.find(
+          i => i.name.toLowerCase() === lowerName && !i.is_custom
+        )
+        if (existing) {
+          await deleteShoppingItem(existing.id)
+          setCustomItems(customItems.filter(i => i.id !== existing.id))
+        }
+      } else {
+        const item = await createShoppingItem({
+          user_id: user.id,
+          name: name,
+          quantity: '',
+          is_custom: false,
+          is_checked: true,
+          week_start: weekStart
+        })
+        setCustomItems([...customItems, item])
+      }
+
+      setCheckedMealIngredients(prev => {
+        const newSet = new Set(prev)
+        if (isChecked) {
+          newSet.delete(lowerName)
+        } else {
+          newSet.add(lowerName)
+        }
+        return newSet
+      })
+    } catch (err) {
+      console.error('Failed to toggle meal ingredient:', err)
     }
   }
 
@@ -84,7 +146,7 @@ export default function ShoppingListPage() {
         is_checked: false,
         week_start: weekStart
       })
-      setShoppingItems([...shoppingItems, item])
+      setCustomItems([...customItems, item])
       setNewItemName('')
       setNewItemQuantity('')
     } catch (err) {
@@ -95,20 +157,64 @@ export default function ShoppingListPage() {
   const removeItem = async (itemId: string) => {
     try {
       await deleteShoppingItem(itemId)
-      setShoppingItems(shoppingItems.filter(i => i.id !== itemId))
+      setCustomItems(customItems.filter(i => i.id !== itemId))
     } catch (err) {
       console.error('Failed to remove item:', err)
     }
   }
 
-  const sortedItems = useMemo(() => {
-    return [...shoppingItems].sort((a, b) => {
-      if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1
+  const aggregatedIngredients = useMemo(() => {
+    const map: Record<string, { quantity: string }> = {}
+    mealIngredients.forEach(ing => {
+      const name = ing.name.toLowerCase().trim()
+      if (map[name]) {
+        if (ing.quantity && !map[name].quantity.includes(ing.quantity)) {
+          map[name].quantity += `, ${ing.quantity}`
+        }
+      } else {
+        map[name] = { quantity: ing.quantity || '' }
+      }
+    })
+    return Object.entries(map).map(([name, data]) => ({ name, quantity: data.quantity }))
+  }, [mealIngredients])
+
+  const allItems: DisplayItem[] = useMemo(() => {
+    const items: DisplayItem[] = []
+
+    customItems.forEach(item => {
+      items.push({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        isCustom: item.is_custom,
+        isChecked: item.is_checked,
+        dbItem: item
+      })
+    })
+
+    aggregatedIngredients.forEach(ing => {
+      const isChecked = checkedMealIngredients.has(ing.name.toLowerCase())
+      const existingCustom = customItems.find(
+        i => i.name.toLowerCase() === ing.name.toLowerCase()
+      )
+      if (!existingCustom) {
+        items.push({
+          id: `meal-${ing.name}`,
+          name: ing.name,
+          quantity: ing.quantity,
+          isCustom: false,
+          isChecked
+        })
+      }
+    })
+
+    return items.sort((a, b) => {
+      if (a.isChecked !== b.isChecked) return a.isChecked ? 1 : -1
       return a.name.localeCompare(b.name)
     })
-  }, [shoppingItems])
+  }, [customItems, aggregatedIngredients, checkedMealIngredients])
 
-  const uncheckedCount = shoppingItems.filter(i => !i.is_checked).length
+  const uncheckedCount = allItems.filter(i => !i.isChecked).length
 
   if (authLoading || loading) {
     return (
@@ -164,33 +270,39 @@ export default function ShoppingListPage() {
         </button>
       </form>
 
-      {shoppingItems.length > 0 && (
+      {allItems.length > 0 && (
         <p className="text-sm text-gray-500 mb-4">
           {uncheckedCount} items remaining
         </p>
       )}
 
       <div className="space-y-2">
-        {sortedItems.map(item => (
+        {allItems.map(item => (
           <div
             key={item.id}
             className={`flex items-center gap-3 p-4 bg-white border rounded-lg ${
-              item.is_checked ? 'bg-gray-50' : ''
+              item.isChecked ? 'bg-gray-50' : ''
             }`}
           >
             <input
               type="checkbox"
-              checked={item.is_checked}
-              onChange={() => toggleItem(item)}
+              checked={item.isChecked}
+              onChange={() => {
+                if (item.dbItem) {
+                  toggleCustomItem(item.dbItem)
+                } else {
+                  toggleMealIngredient(item.name)
+                }
+              }}
               className="w-5 h-5 rounded"
             />
-            <span className={`flex-1 ${item.is_checked ? 'text-gray-400 line-through' : ''}`}>
+            <span className={`flex-1 capitalize ${item.isChecked ? 'text-gray-400 line-through' : ''}`}>
               {item.name}
               {item.quantity && <span className="text-gray-400 ml-2">({item.quantity})</span>}
-              {item.is_custom && <span className="ml-2 text-xs text-blue-500">(custom)</span>}
+              {item.isCustom && <span className="ml-2 text-xs text-blue-500">(custom)</span>}
             </span>
             <button
-              onClick={() => removeItem(item.id)}
+              onClick={() => item.dbItem && removeItem(item.dbItem.id)}
               className="text-gray-400 hover:text-red-500"
             >
               ×
@@ -199,9 +311,9 @@ export default function ShoppingListPage() {
         ))}
       </div>
 
-      {shoppingItems.length === 0 && (
+      {allItems.length === 0 && (
         <p className="text-gray-500 text-center py-8">
-          No items in shopping list. Add items or plan some meals!
+          No items in shopping list. Plan some meals!
         </p>
       )}
     </div>
