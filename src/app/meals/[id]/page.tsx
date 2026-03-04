@@ -127,6 +127,7 @@ export default function MealEditorPage() {
 
     try {
       setUploading(true)
+      setError('')
       const fileExt = file.name.split('.').pop()
       const fileName = `${Math.random()}.${fileExt}`
       const filePath = `${user.id}/${fileName}`
@@ -135,7 +136,10 @@ export default function MealEditorPage() {
         .from('meals')
         .upload(filePath, file)
 
-      if (uploadError) throw uploadError
+      if (uploadError) {
+        console.error('Upload error:', uploadError)
+        throw new Error(uploadError.message)
+      }
 
       const { data: { publicUrl } } = supabase.storage
         .from('meals')
@@ -143,7 +147,9 @@ export default function MealEditorPage() {
 
       setImageUrl(publicUrl)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to upload image')
+      const message = err instanceof Error ? err.message : 'Failed to upload image'
+      console.error('Image upload failed:', message)
+      setError(message)
     } finally {
       setUploading(false)
     }

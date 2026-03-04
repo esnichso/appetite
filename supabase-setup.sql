@@ -103,3 +103,34 @@ CREATE INDEX idx_meals_user_id ON meals(user_id);
 CREATE INDEX idx_ingredients_meal_id ON ingredients(meal_id);
 CREATE INDEX idx_week_plans_user_id_date ON week_plans(user_id, date);
 CREATE INDEX idx_shopping_items_user_id_week_start ON shopping_items(user_id, week_start);
+
+-- Storage policies for meals bucket
+-- Note: Create a storage bucket named 'meals' in Supabase dashboard first
+
+-- Allow authenticated users to upload their own images
+CREATE POLICY "Users can upload own meals images"
+ON storage.objects FOR INSERT
+WITH CHECK (
+  bucket_id = 'meals' AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+-- Allow authenticated users to view their own images
+CREATE POLICY "Users can view own meals images"
+ON storage.objects FOR SELECT
+USING (
+  bucket_id = 'meals' AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+-- Allow authenticated users to update their own images
+CREATE POLICY "Users can update own meals images"
+ON storage.objects FOR UPDATE
+USING (
+  bucket_id = 'meals' AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+-- Allow authenticated users to delete their own images
+CREATE POLICY "Users can delete own meals images"
+ON storage.objects FOR DELETE
+USING (
+  bucket_id = 'meals' AND auth.uid()::text = (storage.foldername(name))[1]
+);
