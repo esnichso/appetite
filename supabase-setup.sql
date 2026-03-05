@@ -26,7 +26,8 @@ CREATE TABLE week_plans (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id),
   date DATE NOT NULL,
-  meal_id UUID NOT NULL REFERENCES meals(id) ON DELETE CASCADE
+  meal_id UUID NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
+  person_count INTEGER DEFAULT 1
 );
 
 -- Shopping items table
@@ -81,6 +82,9 @@ CREATE POLICY "Users can view own week plans" ON week_plans
 
 CREATE POLICY "Users can insert own week plans" ON week_plans
   FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own week plans" ON week_plans
+  FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own week plans" ON week_plans
   FOR DELETE USING (auth.uid() = user_id);

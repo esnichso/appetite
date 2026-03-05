@@ -19,6 +19,7 @@ export interface WeekPlan {
   user_id: string
   date: string
   meal_id: string
+  person_count: number
   meal?: Meal
 }
 

@@ -113,7 +113,18 @@ export async function getWeekPlans(userId: string, startDate: string, endDate: s
 export async function createWeekPlan(plan: Omit<WeekPlan, 'id'>): Promise<WeekPlan> {
   const { data, error } = await supabase
     .from('week_plans')
-    .insert(plan)
+    .insert({ ...plan, person_count: plan.person_count ?? 1 })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateWeekPlan(id: string, plan: Partial<Omit<WeekPlan, 'id'>>): Promise<WeekPlan> {
+  const { data, error } = await supabase
+    .from('week_plans')
+    .update(plan)
+    .eq('id', id)
     .select()
     .single()
   if (error) throw error

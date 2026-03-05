@@ -34,6 +34,7 @@ export default function ShoppingListPage() {
   const { user, loading: authLoading } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [customItems, setCustomItems] = useState<ShoppingItem[]>([])
+  const [weekPlans, setWeekPlans] = useState<WeekPlan[]>([])
   const [mealIngredients, setMealIngredients] = useState<Ingredient[]>([])
   const [checkedMealIngredients, setCheckedMealIngredients] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -64,6 +65,7 @@ export default function ShoppingListPage() {
         getWeekPlans(user.id, weekStart, weekEnd)
       ])
       setCustomItems(custom)
+      setWeekPlans(plans)
 
       const mealIds = plans.map(p => p.meal_id)
       const ingredients = await getIngredientsByMealIds(mealIds)
@@ -164,19 +166,44 @@ export default function ShoppingListPage() {
   }
 
   const aggregatedIngredients = useMemo(() => {
-    const map: Record<string, { quantity: string }> = {}
+    const map: Record<string, { quantity: string; multiplier: number }> = {}
+    
+    const mealPersonCounts: Record<string, number> = {}
+    weekPlans.forEach(plan => {
+      const count = plan.person_count || 1
+      mealPersonCounts[plan.meal_id] = (mealPersonCounts[plan.meal_id] || 0) + count
+    })
+
     mealIngredients.forEach(ing => {
       const name = ing.name.toLowerCase().trim()
+      const multiplier = mealPersonCounts[ing.meal_id] || 1
+      
       if (map[name]) {
         if (ing.quantity && !map[name].quantity.includes(ing.quantity)) {
           map[name].quantity += `, ${ing.quantity}`
         }
+        map[name].multiplier += multiplier
       } else {
-        map[name] = { quantity: ing.quantity || '' }
+        map[name] = { quantity: ing.quantity || '', multiplier }
       }
     })
-    return Object.entries(map).map(([name, data]) => ({ name, quantity: data.quantity }))
-  }, [mealIngredients])
+    
+    return Object.entries(map).map(([name, data]) => {
+      let quantity = data.quantity
+      if (data.multiplier > 1 && quantity) {
+        const numMatch = quantity.match(/^([\d.]+)/)
+        if (numMatch) {
+          const num = parseFloat(numMatch[0])
+          quantity = `${num * data.multiplier}${quantity.slice(numMatch[0].length)}`
+        } else {
+          quantity = `${data.multiplier}x ${quantity}`
+        }
+      } else if (data.multiplier > 1) {
+        quantity = `${data.multiplier}x`
+      }
+      return { name, quantity }
+    })
+  }, [mealIngredients, weekPlans])
 
   const allItems: DisplayItem[] = useMemo(() => {
     const items: DisplayItem[] = []

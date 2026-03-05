@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { getMeals, getWeekPlans, createWeekPlan, deleteWeekPlan, getShoppingItems, createShoppingItem, updateShoppingItem, getIngredientsByMealIds } from '@/lib/db'
+import { getMeals, getWeekPlans, createWeekPlan, deleteWeekPlan, updateWeekPlan, getShoppingItems, createShoppingItem, updateShoppingItem, getIngredientsByMealIds } from '@/lib/db'
 import type { Meal, WeekPlan, ShoppingItem, Ingredient } from '@/types/database'
 
 function getWeekDates(date: Date): Date[] {
@@ -91,13 +91,24 @@ export default function PlannerPage() {
       const plan = await createWeekPlan({
         user_id: user.id,
         date,
-        meal_id: meal.id
+        meal_id: meal.id,
+        person_count: 1
       })
       setWeekPlans([...weekPlans, { ...plan, meal }])
       setShowMealSelector(null)
       setSearchQuery('')
     } catch (err) {
       console.error('Failed to add meal:', err)
+    }
+  }
+
+  const updatePersonCount = async (planId: string, count: number) => {
+    if (!user || count < 1) return
+    try {
+      await updateWeekPlan(planId, { person_count: count })
+      setWeekPlans(weekPlans.map(p => p.id === planId ? { ...p, person_count: count } : p))
+    } catch (err) {
+      console.error('Failed to update person count:', err)
     }
   }
 
@@ -180,19 +191,44 @@ export default function PlannerPage() {
   }
 
   const aggregatedIngredients = useMemo(() => {
-    const map: Record<string, { quantity: string }> = {}
+    const map: Record<string, { quantity: string; multiplier: number }> = {}
+    
+    const mealPersonCounts: Record<string, number> = {}
+    weekPlans.forEach(plan => {
+      const count = plan.person_count || 1
+      mealPersonCounts[plan.meal_id] = (mealPersonCounts[plan.meal_id] || 0) + count
+    })
+
     mealIngredients.forEach(ing => {
       const name = ing.name.toLowerCase().trim()
+      const multiplier = mealPersonCounts[ing.meal_id] || 1
+      
       if (map[name]) {
         if (ing.quantity && !map[name].quantity.includes(ing.quantity)) {
           map[name].quantity += `, ${ing.quantity}`
         }
+        map[name].multiplier += multiplier
       } else {
-        map[name] = { quantity: ing.quantity || '' }
+        map[name] = { quantity: ing.quantity || '', multiplier }
       }
     })
-    return Object.entries(map).map(([name, data]) => ({ name, quantity: data.quantity }))
-  }, [mealIngredients])
+    
+    return Object.entries(map).map(([name, data]) => {
+      let quantity = data.quantity
+      if (data.multiplier > 1 && quantity) {
+        const numMatch = quantity.match(/^([\d.]+)/)
+        if (numMatch) {
+          const num = parseFloat(numMatch[1])
+          quantity = `${num * data.multiplier}${quantity.slice(numMatch[0].length)}`
+        } else {
+          quantity = `${data.multiplier}x ${quantity}`
+        }
+      } else if (data.multiplier > 1) {
+        quantity = `${data.multiplier}x`
+      }
+      return { name, quantity }
+    })
+  }, [mealIngredients, weekPlans])
 
   const allShoppingItems = useMemo(() => {
     const items: { id: string; name: string; quantity: string; isCustom: boolean; isChecked: boolean; dbItem?: ShoppingItem }[] = []
@@ -327,6 +363,21 @@ export default function PlannerPage() {
                         </button>
                         <div className="p-2 bg-white">
                           <span className="text-xs font-medium truncate block">{plan.meal?.name}</span>
+                          <div className="flex items-center gap-1 mt-1">
+                            <button
+                              onClick={(e) => { e.preventDefault(); updatePersonCount(plan.id, (plan.person_count || 1) - 1) }}
+                              className="w-5 h-5 text-xs bg-gray-200 rounded hover:bg-gray-300"
+                            >
+                              -
+                            </button>
+                            <span className="text-xs">{plan.person_count || 1}</span>
+                            <button
+                              onClick={(e) => { e.preventDefault(); updatePersonCount(plan.id, (plan.person_count || 1) + 1) }}
+                              className="w-5 h-5 text-xs bg-gray-200 rounded hover:bg-gray-300"
+                            >
+                              +
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
