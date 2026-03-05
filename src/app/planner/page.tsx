@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { getMeals, getWeekPlans, createWeekPlan, deleteWeekPlan, updateWeekPlan, getShoppingItems, createShoppingItem, updateShoppingItem, getIngredientsByMealIds } from '@/lib/db'
+import { getMeals, getWeekPlans, createWeekPlan, deleteWeekPlan, updateWeekPlan, getShoppingItems, createShoppingItem, updateShoppingItem, getIngredientsByMealIds, getIngredients } from '@/lib/db'
 import type { Meal, WeekPlan, ShoppingItem, Ingredient } from '@/types/database'
 
 function getWeekDates(date: Date): Date[] {
@@ -88,13 +88,23 @@ export default function PlannerPage() {
   const addMealToDay = async (meal: Meal, date: string) => {
     if (!user) return
     try {
+      const existingMealIds = new Set(weekPlans.map(p => p.meal_id))
+      const needsFetch = !existingMealIds.has(meal.id)
+      
       const plan = await createWeekPlan({
         user_id: user.id,
         date,
         meal_id: meal.id,
         person_count: 1
       })
-      setWeekPlans([...weekPlans, { ...plan, meal }])
+      const newWeekPlans = [...weekPlans, { ...plan, meal }]
+      setWeekPlans(newWeekPlans)
+      
+      if (needsFetch) {
+        const newIngredients = await getIngredients(meal.id)
+        setMealIngredients([...mealIngredients, ...newIngredients])
+      }
+      
       setShowMealSelector(null)
       setSearchQuery('')
     } catch (err) {
