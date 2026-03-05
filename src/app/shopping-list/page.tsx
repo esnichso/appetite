@@ -175,25 +175,38 @@ export default function ShoppingListPage() {
     })
 
     mealIngredients.forEach(ing => {
-      const name = ing.name.toLowerCase().trim()
+      const key = `${ing.meal_id}|${ing.name.toLowerCase().trim()}`
       const multiplier = mealPersonCounts[ing.meal_id] || 1
       
-      if (map[name]) {
-        if (ing.quantity && !map[name].quantity.includes(ing.quantity)) {
-          map[name].quantity += `, ${ing.quantity}`
+      if (map[key]) {
+        if (ing.quantity && !map[key].quantity.includes(ing.quantity)) {
+          map[key].quantity += `, ${ing.quantity}`
         }
-        map[name].multiplier += multiplier
+        map[key].multiplier += multiplier
       } else {
-        map[name] = { quantity: ing.quantity || '', multiplier }
+        map[key] = { quantity: ing.quantity || '', multiplier }
       }
     })
     
-    return Object.entries(map).map(([name, data]) => {
+    const nameMap: Record<string, { quantity: string; multiplier: number }> = {}
+    Object.entries(map).forEach(([key, data]) => {
+      const name = key.split('|')[1]
+      if (nameMap[name]) {
+        if (data.quantity && !nameMap[name].quantity.includes(data.quantity)) {
+          nameMap[name].quantity += `, ${data.quantity}`
+        }
+        nameMap[name].multiplier += data.multiplier
+      } else {
+        nameMap[name] = data
+      }
+    })
+    
+    return Object.entries(nameMap).map(([name, data]) => {
       let quantity = data.quantity
       if (data.multiplier > 1 && quantity) {
         const numMatch = quantity.match(/^([\d.]+)/)
         if (numMatch) {
-          const num = parseFloat(numMatch[0])
+          const num = parseFloat(numMatch[1])
           quantity = `${num * data.multiplier}${quantity.slice(numMatch[0].length)}`
         } else {
           quantity = `${data.multiplier}x ${quantity}`
